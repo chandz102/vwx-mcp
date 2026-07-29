@@ -1837,13 +1837,34 @@ def boolean_operation(p):
         return {'error': str(e)}
 
 def set_3d_view(p):
-    vmap = {'top':1,'front':2,'back':3,'right':4,'left':5,'bottom':6,
-            'iso':7,'iso_right':7,'iso_left':8,'trimetric':8}
+    # The Standard Views entries ("Right Isometric" etc.) are View Bar
+    # toolbar-popup items, NOT real application menu commands --
+    # vs.DoMenuTextByName can't reach them ("Menu cannot be found").
+    # vs.SetView's own doc requires a non-plan projection first, hence the
+    # vs.Projection() call. Angles confirmed against the SDK's own
+    # documented VectorScript example (NurbsSurfaceEvalPt) for the
+    # isometric case; other angles are reasonable placeholders -- none of
+    # these can error (SetView just takes six plain numbers), so a wrong
+    # guess produces a wrong-looking view, never a crash/dialog.
+    angles = {
+        'top':        (0, 0, 0),
+        'front':      (-90, 0, 0),
+        'back':       (90, 0, 0),
+        'right':      (0, -90, 0),
+        'left':       (0, 90, 0),
+        'bottom':     (180, 0, 0),
+        'iso':        (-45, -35.26438968275, -30),
+        'iso_right':  (-45, -35.26438968275, -30),
+        'iso_left':   (45, -35.26438968275, -30),
+        'trimetric':  (-30, -35.26438968275, -45),
+    }
+    xA, yA, zA = angles.get(p.get('view', 'top'), (0, 0, 0))
     try:
-        vs.SetView(vmap.get(p.get('view', 'top'), 1))
-    except Exception:
-        # Older API fallback
-        _safe(lambda: vs.SetProjection(0, 0))
+        vs.Projection(0, 0, 10000, (-10000, 10000), (10000, -10000))
+        vs.SetView(xA, yA, zA, 0, 0, 0)
+        vs.ReDrawAll()
+    except Exception as e:
+        return {'error': str(e)}
     return {'status': 'ok'}
 
 
@@ -2439,6 +2460,15 @@ def export_dxf(p):
         return {'error': str(e)}
 
 def export_image(p):
+    # KNOWN BUG: vs.ExportImageFile(hImage, filePath) exports an existing
+    # placed Image OBJECT by handle (vs_index.json: args=['hHmage',
+    # 'filePath'], arity 2) -- it is not a current-view/screenshot export
+    # function. Calling it with (path, w, h, dpi, format_code) as done here
+    # doesn't raise (the string path is silently accepted where a handle
+    # was expected), so this returns {'status': 'ok'} without ever writing
+    # a file. Root-caused 2026-07-29; the correct VS/Python call for
+    # exporting the current view/sheet as a raster image hasn't been found
+    # yet -- worth another look, or ask upstream/Vectorworks support.
     try:
         path = p.get('path', '')
         w = int(p.get('width', 2000))
